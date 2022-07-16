@@ -1,0 +1,162 @@
+defmodule Tai.Venues.Start.FeesTest do
+  use Tai.TestSupport.DataCase, async: false
+  import Tai.TestSupport.Assertions.Event
+
+  defmodule ProductWithFeesAdapter do
+    use Support.StartVenueAdapter
+
+    @product struct(
+               Tai.Venues.Product,
+               venue_id: :venue_a,
+               symbol: :btc_usdt,
+               maker_fee: Decimal.new("0.0001"),
+               taker_fee: Decimal.new("0.0002")
+             )
+
+    def products(_venue_id) do
+      {:ok, [@product]}
+    end
+
+    def maker_taker_fees(_venue_id, _credential_id, _credentials) do
+      {:ok, {Decimal.new("0.0005"), Decimal.new("0.001")}}
+    end
+  end
+
+  defmodule NoProductFeesAdapter do
+    use Support.StartVenueAdapter
+
+    @product struct(
+               Tai.Venues.Product,
+               venue_id: :venue_a,
+               symbol: :btc_usdt
+             )
+
+    def products(_venue_id) do
+      {:ok, [@product]}
+    end
+
+    def maker_taker_fees(_venue_id, _credential_id, _credentials) do
+      {:ok, {Decimal.new("0.0005"), Decimal.new("0.001")}}
+    end
+  end
+
+  defmodule NoScheduleFeesAdapter do
+    use Support.StartVenueAdapter
+
+    @product struct(
+               Tai.Venues.Product,
+               venue_id: :venue_a,
+               symbol: :btc_usdt,
+               maker_fee: Decimal.new("0.0001"),
+               taker_fee: Decimal.new("0.0002")
+             )
+
+    def products(_venue_id) do
+      {:ok, [@product]}
+    end
+
+    def maker_taker_fees(_venue_id, _credential_id, _credentials) do
+      {:ok, nil}
+    end
+  end
+
+  defmodule MaintenanceErrorAdapter do
+    use Support.StartVenueAdapter
+
+    def maker_taker_fees(_venue_id, _credential_id, _credentials) do
+      {:error, :maintenance}
+    end
+  end
+
+  defmodule RaiseErrorAdapter do
+    use Support.StartVenueAdapter
+
+    def maker_taker_fees(_venue_id, _credential_id, _credentials) do
+      raise "raise_error_for_fees"
+    end
+  end
+
+  @base_venue struct(
+                Tai.Venue,
+                adapter: TestAdapter,
+                id: :venue_a,
+                credentials: %{main: %{}},
+                accounts: "*",
+                products: "*",
+                market_streams: "*",
+                timeout: 1_000
+              )
+
+  test "uses the min fee from the product or schedule" do
+    venue = @base_venue |> Map.put(:adapter, ProductWithFeesAdapter)
+    TaiEvents.firehose_subscribe()
+
+    start_supervised!({Tai.Venues.Start, venue})
+
+    assert_event(%Tai.Events.VenueStart{} , :info)
+
+    fees = Tai.Venues.FeeStore.all()
+    assert Enum.count(fees) == 1
+    assert Enum.at(fees, 0).maker == Decimal.new("0.0001")
+    assert Enum.at(fees, 0).taker == Decimal.new("0.0002")
+  end
+
+  test "uses the fee schedule when the product doesn't have maker/taker fees" do
+    venue = @base_venue |> Map.put(:adapter, NoProductFeesAdapter)
+    TaiEvents.firehose_subscribe()
+
+    start_supervised!({Tai.Venues.Start, venue})
+
+    assert_event(%Tai.Events.VenueStart{} , :info)
+
+    fees = Tai.Venues.FeeStore.all()
+    assert Enum.count(fees) == 1
+    assert Enum.at(fees, 0).maker == Decimal.new("0.0005")
+    assert Enum.at(fees, 0).taker == Decimal.new("0.001")
+  end
+
+  test "uses the product fees when there is no fee schedule" do
+    venue = @base_venue |> Map.put(:adapter, NoScheduleFeesAdapter)
+    TaiEvents.firehose_subscribe()
+
+    start_supervised!({Tai.Venues.Start, venue})
+
+    assert_event(%Tai.Events.VenueStart{} , :info)
+
+    fees = Tai.Venues.FeeStore.all()
+    assert Enum.count(fees) == 1
+    assert Enum.at(fees, 0).maker == Decimal.new("0.0001")
+    assert Enum.at(fees, 0).taker == Decimal.new("0.0002")
+  end
+
+  test "broadcasts a start error event when the adapter returns an error" do
+    venue = @base_venue |> Map.put(:adapter, MaintenanceErrorAdapter)
+    TaiEvents.firehose_subscribe()
+
+    start_supervised!({Tai.Venues.Start, venue})
+
+    assert_event(%Tai.Events.VenueStartError{} = event, :error)
+    assert event.venue == venue.id
+    assert event.reason == [fees: [main: :maintenance]]
+  end
+
+  test "broadcasts a start error event when the adapter raises an error" do
+    venue = @base_venue |> Map.put(:adapter, RaiseErrorAdapter)
+    Tai.SystemBus.subscribe({:venue, :start_error})
+    TaiEvents.firehose_subscribe()
+
+    start_supervised!({Tai.Venues.Start, venue})
+
+    assert_receive {{:venue, :start_error}, start_error_venue, start_error_reasons}
+    assert start_error_venue == @base_venue.id
+    assert [fees: _] = start_error_reasons
+
+    assert_event(%Tai.Events.VenueStartError{} = event, :error)
+    assert event.venue == venue.id
+    assert [fees: fee_errors] = event.reason
+    assert Enum.count(fee_errors) == 1
+    assert [{_, {error, stacktrace}} | _] = fee_errors
+    assert error == %RuntimeError{message: "raise_error_for_fees"}
+    assert Enum.count(stacktrace) > 0
+  end
+end

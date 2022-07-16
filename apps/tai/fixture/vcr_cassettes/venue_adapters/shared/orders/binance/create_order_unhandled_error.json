@@ -1,0 +1,41 @@
+[
+  {
+    "request": {
+      "body": "price=0.007&quantity=1000&recvWindow=1000&side=BUY&symbol=LTCBTC&timeInForce=GTC&timestamp=1523576376467&type=LIMIT&signature=***",
+      "headers": {
+        "X-MBX-APIKEY": "***"
+      },
+      "method": "post",
+      "options": [],
+      "request_body": "",
+      "url": "https://api.binance.com/api/v3/order"
+    },
+    "response": {
+      "binary": false,
+      "body": "{\"code\":-123,\"msg\":\"Unhandled\"}",
+      "headers": {
+        "Content-Type": "application/json;charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Date": "Sat, 24 Mar 2018 04:59:36 GMT",
+        "Server": "nginx",
+        "X-MBX-USED-WEIGHT": "1",
+        "Strict-Transport-Security": "max-age=31536000; includeSubdomains",
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-Xss-Protection": "1; mode=block",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'self'",
+        "X-Content-Security-Policy": "default-src 'self'",
+        "X-WebKit-CSP": "default-src 'self'",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "X-Cache": "Error from cloudfront",
+        "Via": "1.1 2d8af5cc5befc5d35bb54b4a5b6494c9.cloudfront.net (CloudFront)",
+        "X-Amz-Cf-Id": "X-U62_U0uaHqLsX87xSDvTsSoyjyjXUVP0ny1kKI4CoKYl3I0PnorQ=="
+      },
+      "status_code": 400,
+      "type": "ok"
+    }
+  }
+]
